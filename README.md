@@ -106,7 +106,7 @@ curl http://localhost:8080/api/v1/pokemon
 
 ```bash
 # Por nombre
-curl "http://localhost:8080/api/v1/pokemon?name=pika"
+curl "http://localhost:8080/api/v1/pokemon/name/pikachu"
 
 # Con paginación
 curl "http://localhost:8080/api/v1/pokemon?limit=10&offset=0"
