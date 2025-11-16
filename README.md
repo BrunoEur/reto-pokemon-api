@@ -75,7 +75,7 @@ make dev
 make run-local
 ```
 
-El servidor estará disponible en `http://localhost:8080`
+El servidor estará disponible en `https://challenge.solimain.com`
 
 ## Testing
 
@@ -99,17 +99,17 @@ make security
 ### Obtener todos los Pokemon
 
 ```bash
-curl http://localhost:8080/api/v1/pokemon
+curl https://challenge.solimain.com/api/v1/pokemon
 ```
 
 ### Filtrar Pokemon
 
 ```bash
 # Por nombre
-curl "http://localhost:8080/api/v1/pokemon/name/pikachu"
+curl "https://challenge.solimain.com/api/v1/pokemon/name/pikachu"
 
 # Con paginación
-curl "http://localhost:8080/api/v1/pokemon?limit=10&offset=0"
+curl "https://challenge.solimain.com/api/v1/pokemon?limit=10&offset=0"
 ```
 
 
