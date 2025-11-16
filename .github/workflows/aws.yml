@@ -1,0 +1,83 @@
+on:
+  push:
+    branches: [main]
+
+name: Deploy to Amazon ECS
+
+jobs:
+  
+  Deploy-main:
+    name: Deploy-main
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+       - name: Checkout
+         uses: actions/checkout@v2
+
+       - name: Configure AWS credentials
+         uses: aws-actions/configure-aws-credentials@v1
+         with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+       - name: Login to Amazon ECR
+         id: login-ecr
+         uses: aws-actions/amazon-ecr-login@v1
+       - name: Build, tag, and push image to Amazon ECR
+         id: build-image
+         env:
+            ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+            ECR_REPOSITORY: ecr-challenge
+            IMAGE_TAG: ${{ github.sha }}
+         run: |
+            # Build a docker container and
+            # push it to ECR so that it can
+            # be deployed to ECS.
+            docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+            docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+       - name: Download Task definition
+         id: task-def-dw
+         run: |
+            aws ecs describe-task-definition --task-definition task-challen --query taskDefinition > task-definition.json
+        
+       - name: Fill in the new image ID in the Amazon ECS task definition
+         id: task-def
+         uses: aws-actions/amazon-ecs-render-task-definition@v1
+         with:
+            task-definition: task-definition.json
+            container-name: task-challen
+            image: ${{ steps.build-image.outputs.image }}
+
+       - name: Deploy Amazon ECS task definition
+         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+         with:
+            task-definition: ${{ steps.task-def.outputs.task-definition }}
+            service: task-challen-service-rr60sw7n
+            cluster: challenge
+            wait-for-service-stability: true
+  Unit-Test:
+    runs-on: ubuntu-latest
+    name: Unit-Test
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: true
+      - name: Configure Git for private modules
+        run: |
+          git config --global url."https://${{secrets.PAT_GITHUB_RW_REPOS}}@github.com/".insteadOf "https://github.com/"
+        env:
+          GOPRIVATE: github.com/tu-org/*
+      - name: Download Dependencies
+        run: go mod download
+        env:
+          GOPRIVATE: github.com/tu-org/*
+      - name: Run Tests
+        run: go test ./... -v
+        env:
+          GOPRIVATE: github.com/tu-org/*
