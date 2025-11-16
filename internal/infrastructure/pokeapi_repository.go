@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"reto-pokemon-api/internal/domain"
@@ -14,6 +15,7 @@ import (
 type pokeAPIRepository struct {
 	client  *http.Client
 	baseURL string
+	cache   *Cache
 }
 
 func NewPokeAPIRepository() domain.PokeAPIRepository {
@@ -21,12 +23,28 @@ func NewPokeAPIRepository() domain.PokeAPIRepository {
 	if baseURL == "" {
 		baseURL = "https://pokeapi.co/api/v2"
 	}
+
+	cachettlEnv := os.Getenv("CACHE_TTL")
+	if cachettlEnv == "0" {
+		cachettlEnv = "60"
+	}
+	
+	cacheTTL := 60 * time.Minute
+	if ttlEnv := cachettlEnv; ttlEnv != "" {
+		if ttlMinutes, err := strconv.Atoi(ttlEnv); err == nil {
+			cacheTTL = time.Duration(ttlMinutes) * time.Minute
+			log.Printf("Cache TTL configured to %d minutes", ttlMinutes)
+		}
+	}
+	
+	log.Printf("Initializing cache with TTL: %v", cacheTTL)
 	
 	return &pokeAPIRepository{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 		baseURL: baseURL,
+		cache:   NewCache(cacheTTL),
 	}
 }
 
@@ -87,13 +105,40 @@ type PokeAPIStat struct {
 }
 
 func (r *pokeAPIRepository) GetPokemonByID(id int) (*domain.Pokemon, error) {
+
+	cacheKey := fmt.Sprintf("pokemon:id:%d", id)
+	if cached, found := r.cache.Get(cacheKey); found {
+		log.Printf("Cache HIT for pokemon ID: %d", id)
+		return cached.(*domain.Pokemon), nil
+	}
+	log.Printf("Cache MISS for pokemon ID: %d", id)
 	url := fmt.Sprintf("%s/pokemon/%d", r.baseURL, id)
-	return r.fetchPokemon(url)
+	pokemon, err := r.fetchPokemon(url)
+	
+	if err == nil && pokemon != nil {
+		r.cache.Set(cacheKey, pokemon)
+	}
+	
+	return pokemon, err
 }
 
 func (r *pokeAPIRepository) GetPokemonByName(name string) (*domain.Pokemon, error) {
+
+	cacheKey := fmt.Sprintf("pokemon:name:%s", name)
+	if cached, found := r.cache.Get(cacheKey); found {
+		log.Printf("Cache HIT for pokemon name: %s", name)
+		return cached.(*domain.Pokemon), nil
+	}
+	
+	log.Printf("Cache MISS for pokemon name: %s", name)
 	url := fmt.Sprintf("%s/pokemon/%s", r.baseURL, name)
-	return r.fetchPokemon(url)
+	pokemon, err := r.fetchPokemon(url)
+	
+	if err == nil && pokemon != nil {
+		r.cache.Set(cacheKey, pokemon)
+	}
+	
+	return pokemon, err
 }
 
 func (r *pokeAPIRepository) GetPokemonAll(filter domain.PokemonFilter) (*domain.PokemonList, error) {
@@ -106,9 +151,24 @@ func (r *pokeAPIRepository) GetPokemonAll(filter domain.PokemonFilter) (*domain.
 	if filter.Limit > 0 {
 		limitset = filter.Limit
 	}
+	
+	cacheKey := fmt.Sprintf("pokemon:list:offset:%d:limit:%d", offset, limitset)
+	if cached, found := r.cache.Get(cacheKey); found {
+		log.Printf("Cache HIT for pokemon list (offset: %d, limit: %d)", offset, limitset)
+		return cached.(*domain.PokemonList), nil
+	}
+	
+	log.Printf("Cache MISS for pokemon list (offset: %d, limit: %d)", offset, limitset)
 	url := fmt.Sprintf("%s/pokemon?offset=%d&limit=%d", r.baseURL, offset, limitset)
 	log.Println("url:", url)
-	return r.fetchPokemonAll(url)
+	
+	pokemonList, err := r.fetchPokemonAll(url)
+	
+	if err == nil && pokemonList != nil {
+		r.cache.Set(cacheKey, pokemonList)
+	}
+	
+	return pokemonList, err
 }
 
 func (r *pokeAPIRepository) fetchPokemon(url string) (*domain.Pokemon, error) {
